@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { 
   Calendar, 
@@ -9,41 +10,77 @@ import {
   CheckCircle2,
   Clock,
   ArrowRight,
-  Sparkles
+  Sparkles,
+  Inbox
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-
-const categories = [
-  { name: "Moradia", planned: 3500, actual: 3500, color: "bg-primary" },
-  { name: "Alimentação", planned: 1800, actual: 2100, color: "bg-destructive" },
-  { name: "Transporte", planned: 800, actual: 650, color: "bg-secondary" },
-  { name: "Saúde", planned: 400, actual: 380, color: "bg-secondary" },
-  { name: "Lazer", planned: 600, actual: 750, color: "bg-destructive" },
-  { name: "Educação", planned: 500, actual: 500, color: "bg-primary" },
-  { name: "Vestuário", planned: 300, actual: 180, color: "bg-secondary" },
-  { name: "Outros", planned: 400, actual: 420, color: "bg-accent" },
-];
-
-const recentTransactions = [
-  { merchant: "Supermercado Extra", amount: 285.50, category: "Alimentação", confidence: "high" },
-  { merchant: "Uber", amount: 32.90, category: "Transporte", confidence: "high" },
-  { merchant: "Netflix", amount: 55.90, category: "Lazer", confidence: "high" },
-  { merchant: "PIX - Maria Santos", amount: 150.00, category: "Pendente", confidence: "low" },
-];
+import { LoadingState } from "@/components/LoadingState";
+import { EmptyState } from "@/components/EmptyState";
+import { useCurrentBudgetMonth } from "@/hooks/useBudgetMonths";
+import { useCategories } from "@/hooks/useCategories";
+import { useBudgetCategories } from "@/hooks/useBudgetCategories";
+import { useTransactions, useTransactionsByCategory } from "@/hooks/useTransactions";
 
 export default function Dashboard() {
-  const currentMonth = "Janeiro 2025";
-  const monthClosed = false;
-  const pendingTransactions = 4;
-  
-  const totalPlanned = categories.reduce((acc, cat) => acc + cat.planned, 0);
-  const totalActual = categories.reduce((acc, cat) => acc + cat.actual, 0);
+  const { data: currentBudget, isLoading: budgetLoading } = useCurrentBudgetMonth();
+  const { data: categories, isLoading: categoriesLoading } = useCategories();
+  const { data: budgetCategories, isLoading: budgetCategoriesLoading } = useBudgetCategories(currentBudget?.id);
+  const { data: recentTransactions, isLoading: transactionsLoading } = useTransactions({ limit: 5 });
+  const { data: transactionsByCategory } = useTransactionsByCategory(currentBudget?.id);
+
+  const isLoading = budgetLoading || categoriesLoading || budgetCategoriesLoading || transactionsLoading;
+
+  const now = new Date();
+  const currentMonth = format(now, "MMMM yyyy", { locale: ptBR });
+  const currentMonthCapitalized = currentMonth.charAt(0).toUpperCase() + currentMonth.slice(1);
+
+  const monthClosed = currentBudget?.status === "closed";
+
+  // Calculate pending transactions
+  const pendingTransactions = useMemo(() => {
+    return recentTransactions?.filter(tx => tx.needs_review).length ?? 0;
+  }, [recentTransactions]);
+
+  // Calculate category stats
+  const categoryStats = useMemo(() => {
+    if (!budgetCategories || !transactionsByCategory || !categories) return [];
+
+    return budgetCategories.map(bc => {
+      const txCategory = transactionsByCategory.find(
+        tc => tc.category?.id === bc.category_id
+      );
+      const actual = txCategory?.total ?? 0;
+      const planned = Number(bc.planned_amount);
+      
+      return {
+        name: bc.categories.name,
+        icon: bc.categories.icon,
+        color: bc.categories.color,
+        planned,
+        actual,
+        isOver: actual > planned,
+      };
+    });
+  }, [budgetCategories, transactionsByCategory, categories]);
+
+  const totalPlanned = categoryStats.reduce((acc, cat) => acc + cat.planned, 0);
+  const totalActual = categoryStats.reduce((acc, cat) => acc + cat.actual, 0);
   const difference = totalActual - totalPlanned;
-  const overBudgetCategories = categories.filter(cat => cat.actual > cat.planned).length;
+  const overBudgetCategories = categoryStats.filter(cat => cat.isOver).length;
+
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <LoadingState type="page" />
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -55,7 +92,7 @@ export default function Dashboard() {
           className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
         >
           <div>
-            <h1 className="text-2xl lg:text-3xl font-bold text-foreground">{currentMonth}</h1>
+            <h1 className="text-2xl lg:text-3xl font-bold text-foreground">{currentMonthCapitalized}</h1>
             <p className="text-muted-foreground">Visão geral do mês corrente</p>
           </div>
           {!monthClosed && (
@@ -239,46 +276,59 @@ export default function Dashboard() {
                 </Link>
               </CardHeader>
               <CardContent className="space-y-4">
-                {categories.map((category, index) => {
-                  const percentage = Math.min((category.actual / category.planned) * 100, 150);
-                  const isOver = category.actual > category.planned;
-                  
-                  return (
-                    <motion.div
-                      key={category.name}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.1 * index }}
-                      className="space-y-2"
-                    >
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="font-medium text-foreground">{category.name}</span>
-                        <div className="flex items-center gap-2">
-                          <span className={isOver ? 'text-destructive font-medium' : 'text-muted-foreground'}>
-                            R$ {category.actual.toLocaleString('pt-BR')}
-                          </span>
-                          <span className="text-muted-foreground">/</span>
-                          <span className="text-muted-foreground">
-                            R$ {category.planned.toLocaleString('pt-BR')}
-                          </span>
-                          {isOver && <AlertTriangle className="w-4 h-4 text-destructive" />}
+                {categoryStats.length === 0 ? (
+                  <EmptyState
+                    icon={Inbox}
+                    title="Nenhuma categoria configurada"
+                    description="Configure seu orçamento para ver a comparação entre planejado e real."
+                    action={{
+                      label: "Configurar Orçamento",
+                      onClick: () => window.location.href = "/budget"
+                    }}
+                  />
+                ) : (
+                  categoryStats.map((category, index) => {
+                    const percentage = category.planned > 0 
+                      ? Math.min((category.actual / category.planned) * 100, 150)
+                      : 0;
+                    
+                    return (
+                      <motion.div
+                        key={category.name}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 * index }}
+                        className="space-y-2"
+                      >
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="font-medium text-foreground">{category.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={category.isOver ? 'text-destructive font-medium' : 'text-muted-foreground'}>
+                              R$ {category.actual.toLocaleString('pt-BR')}
+                            </span>
+                            <span className="text-muted-foreground">/</span>
+                            <span className="text-muted-foreground">
+                              R$ {category.planned.toLocaleString('pt-BR')}
+                            </span>
+                            {category.isOver && <AlertTriangle className="w-4 h-4 text-destructive" />}
+                          </div>
                         </div>
-                      </div>
-                      <div className="relative">
-                        <Progress 
-                          value={Math.min(percentage, 100)} 
-                          className={`h-2 ${isOver ? '[&>div]:bg-destructive' : '[&>div]:bg-secondary'}`}
-                        />
-                        {percentage > 100 && (
-                          <div 
-                            className="absolute top-0 h-2 bg-destructive/30 rounded-full"
-                            style={{ left: '66.67%', width: `${Math.min((percentage - 100) / 50 * 33.33, 33.33)}%` }}
+                        <div className="relative">
+                          <Progress 
+                            value={Math.min(percentage, 100)} 
+                            className={`h-2 ${category.isOver ? '[&>div]:bg-destructive' : '[&>div]:bg-secondary'}`}
                           />
-                        )}
-                      </div>
-                    </motion.div>
-                  );
-                })}
+                          {percentage > 100 && (
+                            <div 
+                              className="absolute top-0 h-2 bg-destructive/30 rounded-full"
+                              style={{ left: '66.67%', width: `${Math.min((percentage - 100) / 50 * 33.33, 33.33)}%` }}
+                            />
+                          )}
+                        </div>
+                      </motion.div>
+                    );
+                  })
+                )}
               </CardContent>
             </Card>
           </motion.div>
@@ -299,34 +349,46 @@ export default function Dashboard() {
                 </Link>
               </CardHeader>
               <CardContent className="space-y-4">
-                {recentTransactions.map((tx, index) => (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, x: 10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.1 * index }}
-                    className="flex items-center justify-between py-2 border-b border-border last:border-0"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{tx.merchant}</p>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          tx.category === 'Pendente' 
-                            ? 'bg-accent/20 text-accent-foreground' 
-                            : 'bg-muted text-muted-foreground'
-                        }`}>
-                          {tx.category}
-                        </span>
-                        {tx.confidence === 'low' && (
-                          <span className="w-2 h-2 rounded-full bg-accent animate-pulse-soft" />
-                        )}
+                {!recentTransactions || recentTransactions.length === 0 ? (
+                  <EmptyState
+                    icon={Inbox}
+                    title="Nenhuma transação"
+                    description="Importe transações via OFX ou prints para começar."
+                    action={{
+                      label: "Importar",
+                      onClick: () => window.location.href = "/uploads"
+                    }}
+                  />
+                ) : (
+                  recentTransactions.map((tx, index) => (
+                    <motion.div
+                      key={tx.id}
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.1 * index }}
+                      className="flex items-center justify-between py-2 border-b border-border last:border-0"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground truncate">{tx.merchant}</p>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            tx.needs_review 
+                              ? 'bg-accent/20 text-accent-foreground' 
+                              : 'bg-muted text-muted-foreground'
+                          }`}>
+                            {tx.categories?.name ?? 'Pendente'}
+                          </span>
+                          {tx.confidence === 'low' && (
+                            <span className="w-2 h-2 rounded-full bg-accent animate-pulse-soft" />
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <p className="text-sm font-semibold text-foreground ml-4">
-                      -R$ {tx.amount.toFixed(2).replace('.', ',')}
-                    </p>
-                  </motion.div>
-                ))}
+                      <p className="text-sm font-semibold text-foreground ml-4">
+                        -R$ {Math.abs(Number(tx.amount)).toFixed(2).replace('.', ',')}
+                      </p>
+                    </motion.div>
+                  ))
+                )}
               </CardContent>
             </Card>
           </motion.div>
