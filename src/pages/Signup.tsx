@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Heart, Mail, Lock, Eye, EyeOff, ArrowRight, Users } from "lucide-react";
+import { Heart, Mail, Lock, Eye, EyeOff, ArrowRight, User, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,19 +9,27 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
 
-const loginSchema = z.object({
+const signupSchema = z.object({
+  displayName: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
   email: z.string().email("Email inválido"),
-  password: z.string().min(1, "Senha é obrigatória"),
+  password: z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "As senhas não coincidem",
+  path: ["confirmPassword"],
 });
 
-export default function Login() {
+export default function Signup() {
   const navigate = useNavigate();
-  const { signIn, user } = useAuth();
+  const { signUp, user } = useAuth();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -30,11 +38,11 @@ export default function Login() {
     }
   }, [user, navigate]);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
 
-    const result = loginSchema.safeParse({ email, password });
+    const result = signupSchema.safeParse({ displayName, email, password, confirmPassword });
     
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
@@ -49,27 +57,32 @@ export default function Login() {
 
     setIsLoading(true);
     
-    const { error } = await signIn(email, password);
+    const { error } = await signUp(email, password, displayName);
     
     if (error) {
       setIsLoading(false);
       
-      if (error.message.includes("Invalid login credentials")) {
+      if (error.message.includes("already registered")) {
         toast({
           variant: "destructive",
-          title: "Credenciais inválidas",
-          description: "Email ou senha incorretos. Verifique e tente novamente.",
+          title: "Email já cadastrado",
+          description: "Este email já está em uso. Tente fazer login ou use outro email.",
         });
       } else {
         toast({
           variant: "destructive",
-          title: "Erro ao fazer login",
+          title: "Erro ao criar conta",
           description: error.message,
         });
       }
       return;
     }
 
+    toast({
+      title: "Conta criada com sucesso!",
+      description: "Bem-vindos ao Ritual Financeiro do Casal.",
+    });
+    
     setIsLoading(false);
   };
 
@@ -96,41 +109,41 @@ export default function Login() {
             </div>
             
             <h2 className="text-4xl font-bold mb-6 leading-tight">
-              Reduzam surpresas.<br />
-              Aumentem a harmonia.
+              Comecem juntos.<br />
+              Construam o futuro.
             </h2>
             
             <p className="text-lg text-primary-foreground/80 mb-8 max-w-md">
-              Um ritual simples de fechamento mensal e check-in semanal que traz clareza 
-              e elimina conflitos financeiros entre vocês.
+              Criem a conta do casal e comecem a organizar suas finanças 
+              de forma simples e harmoniosa.
             </p>
             
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-primary-foreground/20 flex items-center justify-center">
-                  <span className="text-lg">📋</span>
+                  <span className="text-lg">✨</span>
                 </div>
                 <div>
-                  <p className="font-medium">Dia 1: Ritual de 10 minutos</p>
-                  <p className="text-sm text-primary-foreground/70">Clone, ajuste e feche o mês</p>
+                  <p className="font-medium">Conta compartilhada</p>
+                  <p className="text-sm text-primary-foreground/70">Um login, visão unificada</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-primary-foreground/20 flex items-center justify-center">
-                  <span className="text-lg">📸</span>
+                  <span className="text-lg">🔒</span>
                 </div>
                 <div>
-                  <p className="font-medium">Quartas: Upload rápido</p>
-                  <p className="text-sm text-primary-foreground/70">Prints de cartão + OFX</p>
+                  <p className="font-medium">Dados protegidos</p>
+                  <p className="text-sm text-primary-foreground/70">Criptografia de ponta</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-lg bg-primary-foreground/20 flex items-center justify-center">
-                  <span className="text-lg">📊</span>
+                  <span className="text-lg">💳</span>
                 </div>
                 <div>
-                  <p className="font-medium">Relatório unificado</p>
-                  <p className="text-sm text-primary-foreground/70">Planejado vs Real por categoria</p>
+                  <p className="font-medium">Grátis para começar</p>
+                  <p className="text-sm text-primary-foreground/70">Sem cartão de crédito</p>
                 </div>
               </div>
             </div>
@@ -138,7 +151,7 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Right Panel - Login Form */}
+      {/* Right Panel - Signup Form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -158,11 +171,30 @@ export default function Login() {
           </div>
 
           <div className="text-center mb-8">
-            <h2 className="text-2xl font-bold text-foreground mb-2">Bem-vindos de volta!</h2>
-            <p className="text-muted-foreground">Entre na conta do casal para continuar</p>
+            <h2 className="text-2xl font-bold text-foreground mb-2">Criar conta do casal</h2>
+            <p className="text-muted-foreground">Comecem sua jornada financeira juntos</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-5">
+          <form onSubmit={handleSignup} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="displayName" className="text-foreground">Nome do Casal</Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <Input
+                  id="displayName"
+                  type="text"
+                  placeholder="Maria & Carlos"
+                  className={`pl-10 h-12 ${errors.displayName ? "border-destructive" : ""}`}
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                />
+              </div>
+              {errors.displayName && (
+                <p className="text-sm text-destructive">{errors.displayName}</p>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="email" className="text-foreground">Email</Label>
               <div className="relative">
@@ -183,12 +215,7 @@ export default function Login() {
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-foreground">Senha</Label>
-                <Link to="/forgot-password" className="text-sm text-primary hover:underline">
-                  Esqueceu a senha?
-                </Link>
-              </div>
+              <Label htmlFor="password" className="text-foreground">Senha</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <Input
@@ -213,12 +240,38 @@ export default function Login() {
               )}
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword" className="text-foreground">Confirmar Senha</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <Input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  className={`pl-10 pr-10 h-12 ${errors.confirmPassword ? "border-destructive" : ""}`}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+              {errors.confirmPassword && (
+                <p className="text-sm text-destructive">{errors.confirmPassword}</p>
+              )}
+            </div>
+
             <Button type="submit" variant="hero" size="lg" className="w-full" disabled={isLoading}>
               {isLoading ? (
                 <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
               ) : (
                 <>
-                  Entrar
+                  Criar Conta
                   <ArrowRight className="w-5 h-5 ml-1" />
                 </>
               )}
@@ -227,9 +280,9 @@ export default function Login() {
 
           <div className="mt-6 text-center">
             <p className="text-muted-foreground">
-              Ainda não tem uma conta?{" "}
-              <Link to="/signup" className="text-primary font-medium hover:underline">
-                Criar conta do casal
+              Já tem uma conta?{" "}
+              <Link to="/login" className="text-primary font-medium hover:underline">
+                Fazer login
               </Link>
             </p>
           </div>

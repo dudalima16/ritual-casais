@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -32,6 +33,22 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/login");
+  };
+
+  // Get display name from user metadata or email
+  const displayName = user?.user_metadata?.display_name || user?.email?.split("@")[0] || "Usuário";
+  const initials = displayName
+    .split(" ")
+    .map((n: string) => n[0])
+    .join("")
+    .substring(0, 2)
+    .toUpperCase();
 
   return (
     <div className="min-h-screen bg-background">
@@ -112,23 +129,22 @@ export function AppLayout({ children }: AppLayoutProps) {
           <div className="p-4 border-t border-sidebar-border">
             <div className="flex items-center gap-3 px-2 mb-4">
               <div className="w-10 h-10 rounded-full bg-sidebar-accent flex items-center justify-center text-sm font-medium">
-                MC
+                {initials}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">Maria & Carlos</p>
-                <p className="text-xs text-sidebar-foreground/60">Casal Premium</p>
+                <p className="text-sm font-medium truncate">{displayName}</p>
+                <p className="text-xs text-sidebar-foreground/60 truncate">{user?.email}</p>
               </div>
             </div>
-            <Link to="/">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                Sair
-              </Button>
-            </Link>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSignOut}
+              className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Sair
+            </Button>
           </div>
         </div>
       </aside>
