@@ -1,21 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Inbox, 
-  Filter,
   Check,
   AlertTriangle,
   ArrowLeftRight,
   Image,
   FileSpreadsheet,
-  Home,
-  ShoppingCart,
-  Car,
-  Heart,
-  Gamepad2,
-  GraduationCap,
-  Shirt,
-  MoreHorizontal,
   X
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -23,87 +14,75 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-
-interface Transaction {
-  id: string;
-  merchant: string;
-  amount: number;
-  date: string;
-  category: string | null;
-  confidence: "high" | "medium" | "low";
-  source: "print" | "ofx";
-  isInternal: boolean;
-  needsAction: boolean;
-}
-
-const mockTransactions: Transaction[] = [
-  { id: "1", merchant: "PIX - Maria Santos", amount: 150.00, date: "2025-01-13", category: null, confidence: "low", source: "ofx", isInternal: false, needsAction: true },
-  { id: "2", merchant: "TED Conta Conjunta", amount: 500.00, date: "2025-01-12", category: null, confidence: "low", source: "ofx", isInternal: true, needsAction: true },
-  { id: "3", merchant: "Supermercado Extra", amount: 285.50, date: "2025-01-12", category: "Alimentação", confidence: "high", source: "print", isInternal: false, needsAction: false },
-  { id: "4", merchant: "Uber", amount: 32.90, date: "2025-01-11", category: "Transporte", confidence: "high", source: "print", isInternal: false, needsAction: false },
-  { id: "5", merchant: "Netflix", amount: 55.90, date: "2025-01-10", category: "Lazer", confidence: "high", source: "print", isInternal: false, needsAction: false },
-  { id: "6", merchant: "Farmácia Drogasil", amount: 89.90, date: "2025-01-10", category: "Saúde", confidence: "medium", source: "print", isInternal: false, needsAction: false },
-  { id: "7", merchant: "Pagamento Fatura Nubank", amount: 2500.00, date: "2025-01-09", category: null, confidence: "medium", source: "ofx", isInternal: true, needsAction: true },
-];
-
-const categories = [
-  { name: "Moradia", icon: Home, color: "bg-blue-500" },
-  { name: "Alimentação", icon: ShoppingCart, color: "bg-orange-500" },
-  { name: "Transporte", icon: Car, color: "bg-purple-500" },
-  { name: "Saúde", icon: Heart, color: "bg-red-500" },
-  { name: "Lazer", icon: Gamepad2, color: "bg-pink-500" },
-  { name: "Educação", icon: GraduationCap, color: "bg-indigo-500" },
-  { name: "Vestuário", icon: Shirt, color: "bg-teal-500" },
-  { name: "Outros", icon: MoreHorizontal, color: "bg-gray-500" },
-];
+import { LoadingState } from "@/components/LoadingState";
+import { EmptyState } from "@/components/EmptyState";
+import { useTransactions, useCategorizeTransaction, useMarkAsInternal } from "@/hooks/useTransactions";
+import { useCategories } from "@/hooks/useCategories";
+import * as LucideIcons from "lucide-react";
 
 type FilterType = "all" | "pending" | "internal";
 
 export default function Transactions() {
-  const [transactions, setTransactions] = useState(mockTransactions);
   const [filter, setFilter] = useState<FilterType>("all");
   const [showCategoryModal, setShowCategoryModal] = useState<string | null>(null);
   const { toast } = useToast();
 
-  const filteredTransactions = transactions.filter((tx) => {
-    if (filter === "pending") return tx.needsAction;
-    if (filter === "internal") return tx.isInternal;
-    return true;
-  });
+  const { data: transactions, isLoading: transactionsLoading } = useTransactions();
+  const { data: categories, isLoading: categoriesLoading } = useCategories();
+  const categorize = useCategorizeTransaction();
+  const markAsInternal = useMarkAsInternal();
 
-  const pendingCount = transactions.filter((tx) => tx.needsAction).length;
+  const isLoading = transactionsLoading || categoriesLoading;
 
-  const handleCategorize = (transactionId: string, category: string) => {
-    setTransactions((prev) =>
-      prev.map((tx) =>
-        tx.id === transactionId
-          ? { ...tx, category, confidence: "high" as const, needsAction: false }
-          : tx
-      )
-    );
-    setShowCategoryModal(null);
-    toast({
-      title: "Categorizado!",
-      description: `Transação marcada como ${category}`,
+  const filteredTransactions = useMemo(() => {
+    if (!transactions) return [];
+    
+    return transactions.filter((tx) => {
+      if (filter === "pending") return tx.needs_review;
+      if (filter === "internal") return tx.is_internal;
+      return true;
     });
+  }, [transactions, filter]);
+
+  const pendingCount = useMemo(() => {
+    return transactions?.filter((tx) => tx.needs_review).length ?? 0;
+  }, [transactions]);
+
+  const handleCategorize = async (transactionId: string, categoryId: string) => {
+    try {
+      await categorize.mutateAsync({ id: transactionId, categoryId });
+      setShowCategoryModal(null);
+      toast({
+        title: "Categorizado!",
+        description: "Transação categorizada com sucesso",
+      });
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Não foi possível categorizar a transação",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleMarkAsInternal = (transactionId: string) => {
-    setTransactions((prev) =>
-      prev.map((tx) =>
-        tx.id === transactionId
-          ? { ...tx, isInternal: true, needsAction: false, category: "Movimentação Interna" }
-          : tx
-      )
-    );
-    setShowCategoryModal(null);
-    toast({
-      title: "Marcado como interno",
-      description: "Esta transação não entrará no relatório Real",
-    });
+  const handleMarkAsInternal = async (transactionId: string) => {
+    try {
+      await markAsInternal.mutateAsync(transactionId);
+      setShowCategoryModal(null);
+      toast({
+        title: "Marcado como interno",
+        description: "Esta transação não entrará no relatório Real",
+      });
+    } catch (error) {
+      toast({
+        title: "Erro",
+        description: "Não foi possível marcar como interna",
+        variant: "destructive",
+      });
+    }
   };
 
-  const getConfidenceBadge = (confidence: Transaction["confidence"]) => {
+  const getConfidenceBadge = (confidence: string) => {
     switch (confidence) {
       case "high":
         return <Badge variant="secondary" className="bg-secondary/20 text-secondary">Alta</Badge>;
@@ -111,10 +90,32 @@ export default function Transactions() {
         return <Badge variant="outline" className="border-accent text-accent-foreground">Média</Badge>;
       case "low":
         return <Badge variant="destructive" className="bg-destructive/20 text-destructive">Baixa</Badge>;
+      default:
+        return null;
     }
   };
 
-  const selectedTransaction = transactions.find((tx) => tx.id === showCategoryModal);
+  const selectedTransaction = transactions?.find((tx) => tx.id === showCategoryModal);
+
+  // Helper to get icon component
+  const getIconComponent = (iconName: string) => {
+    const icons: Record<string, any> = LucideIcons;
+    const formattedName = iconName
+      .split('-')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join('');
+    return icons[formattedName] || icons.CircleDot;
+  };
+
+  if (isLoading) {
+    return (
+      <AppLayout>
+        <div className="max-w-4xl mx-auto">
+          <LoadingState type="list" count={5} />
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -187,81 +188,79 @@ export default function Transactions() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                <AnimatePresence mode="popLayout">
-                  {filteredTransactions.map((tx, index) => (
-                    <motion.div
-                      key={tx.id}
-                      layout
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, x: -20 }}
-                      transition={{ delay: index * 0.03 }}
-                      className={`flex items-center gap-4 p-4 rounded-lg transition-colors ${
-                        tx.needsAction ? "bg-accent/10 border border-accent/30" : "bg-muted/30"
-                      }`}
-                    >
-                      {/* Source Icon */}
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                        tx.source === "print" ? "bg-primary/10" : "bg-secondary/10"
-                      }`}>
-                        {tx.source === "print" ? (
-                          <Image className="w-5 h-5 text-primary" />
-                        ) : (
-                          <FileSpreadsheet className="w-5 h-5 text-secondary" />
+                {filteredTransactions.length === 0 ? (
+                  <EmptyState
+                    icon={Check}
+                    title="Tudo em dia!"
+                    description={filter === "pending" 
+                      ? "Nenhuma transação pendente" 
+                      : "Nenhuma transação encontrada"}
+                  />
+                ) : (
+                  <AnimatePresence mode="popLayout">
+                    {filteredTransactions.map((tx, index) => (
+                      <motion.div
+                        key={tx.id}
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        transition={{ delay: index * 0.03 }}
+                        className={`flex items-center gap-4 p-4 rounded-lg transition-colors ${
+                          tx.needs_review ? "bg-accent/10 border border-accent/30" : "bg-muted/30"
+                        }`}
+                      >
+                        {/* Source Icon */}
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                          tx.source === "print" ? "bg-primary/10" : "bg-secondary/10"
+                        }`}>
+                          {tx.source === "print" ? (
+                            <Image className="w-5 h-5 text-primary" />
+                          ) : (
+                            <FileSpreadsheet className="w-5 h-5 text-secondary" />
+                          )}
+                        </div>
+
+                        {/* Transaction Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-foreground truncate">{tx.merchant}</p>
+                            {tx.is_internal && (
+                              <Badge variant="outline" className="text-xs">Interna</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <span className="text-xs text-muted-foreground">{tx.transaction_date}</span>
+                            {tx.categories && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                                {tx.categories.name}
+                              </span>
+                            )}
+                            {getConfidenceBadge(tx.confidence)}
+                          </div>
+                        </div>
+
+                        {/* Amount */}
+                        <p className={`font-semibold text-right shrink-0 ${
+                          tx.is_internal ? "text-muted-foreground" : "text-foreground"
+                        }`}>
+                          -R$ {Math.abs(Number(tx.amount)).toFixed(2).replace(".", ",")}
+                        </p>
+
+                        {/* Action Button */}
+                        {tx.needs_review && (
+                          <Button
+                            variant="hero"
+                            size="touch"
+                            onClick={() => setShowCategoryModal(tx.id)}
+                            className="shrink-0"
+                          >
+                            Categorizar
+                          </Button>
                         )}
-                      </div>
-
-                      {/* Transaction Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium text-foreground truncate">{tx.merchant}</p>
-                          {tx.isInternal && (
-                            <Badge variant="outline" className="text-xs">Interna</Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <span className="text-xs text-muted-foreground">{tx.date}</span>
-                          {tx.category && (
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${
-                              tx.category === "Movimentação Interna" 
-                                ? "bg-muted text-muted-foreground"
-                                : "bg-primary/10 text-primary"
-                            }`}>
-                              {tx.category}
-                            </span>
-                          )}
-                          {getConfidenceBadge(tx.confidence)}
-                        </div>
-                      </div>
-
-                      {/* Amount */}
-                      <p className={`font-semibold text-right shrink-0 ${
-                        tx.isInternal ? "text-muted-foreground" : "text-foreground"
-                      }`}>
-                        -R$ {tx.amount.toFixed(2).replace(".", ",")}
-                      </p>
-
-                      {/* Action Button */}
-                      {tx.needsAction && (
-                        <Button
-                          variant="hero"
-                          size="touch"
-                          onClick={() => setShowCategoryModal(tx.id)}
-                          className="shrink-0"
-                        >
-                          Categorizar
-                        </Button>
-                      )}
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-
-                {filteredTransactions.length === 0 && (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Check className="w-12 h-12 mx-auto mb-3 text-secondary" />
-                    <p className="font-medium">Tudo em dia!</p>
-                    <p className="text-sm">Nenhuma transação pendente</p>
-                  </div>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
                 )}
               </div>
             </CardContent>
@@ -270,7 +269,7 @@ export default function Transactions() {
 
         {/* Category Modal */}
         <AnimatePresence>
-          {showCategoryModal && selectedTransaction && (
+          {showCategoryModal && selectedTransaction && categories && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -302,18 +301,18 @@ export default function Transactions() {
                   <p className="text-sm text-muted-foreground mb-3">Selecione uma categoria:</p>
                   <div className="grid grid-cols-2 gap-3">
                     {categories.map((category, index) => {
-                      const Icon = category.icon;
+                      const IconComponent = getIconComponent(category.icon);
                       return (
                         <motion.button
-                          key={category.name}
+                          key={category.id}
                           initial={{ opacity: 0, scale: 0.9 }}
                           animate={{ opacity: 1, scale: 1 }}
                           transition={{ delay: index * 0.04 }}
-                          onClick={() => handleCategorize(selectedTransaction.id, category.name)}
+                          onClick={() => handleCategorize(selectedTransaction.id, category.id)}
                           className="flex items-center gap-3 p-4 rounded-xl bg-muted/50 hover:bg-primary/10 transition-colors text-left min-h-[56px] active:scale-[0.98]"
                         >
                           <div className={`w-10 h-10 rounded-lg ${category.color} bg-opacity-20 flex items-center justify-center`}>
-                            <Icon className="w-5 h-5" style={{ color: category.color.replace("bg-", "") }} />
+                            <IconComponent className="w-5 h-5" />
                           </div>
                           <span className="font-medium text-foreground text-sm">{category.name}</span>
                         </motion.button>
